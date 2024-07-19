@@ -2,7 +2,16 @@ import torch.nn as nn
 import torch
 import torchvision
 from pytorch_resnet_cifar10.resnet import resnet20 as resnet20
-from ct.src.cct import cct_7_3x1_32
+#from ct.src.cct import cct_7_3x1_32
+import clip
+
+class ClipWrapper(nn.Module):
+    def __init__(self, clip_model):
+        super().__init__()
+        self.clip = clip_model
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.clip.encode_image(x)
 
 class Mask(nn.Module):
 
@@ -36,11 +45,12 @@ class MaskedClf(nn.Module):
 
     def __init__(self, mask, clf):
         super().__init__()
-        self.mask=mask
-        self.clf=clf
+        self.mask = mask
+        self.clf = clf
+
     def forward(self, x):
-        x=self.mask(x)
-        x=self.clf(x)
+        x = self.mask(x)
+        x = self.clf(x)
         return x
 
 def get_model(model_name):
@@ -53,22 +63,31 @@ def get_model(model_name):
     Return: Chosen model
     '''
 
-    if model_name=='resnet20':
-        model=resnet20()
-    elif model_name=='cct':
+    if model_name == 'resnet20':
+        model = resnet20()
+    elif model_name == 'cct':
         model = cct_7_3x1_32(pretrained=True)
-    elif model_name=='resnet18':
+    elif model_name == 'resnet18':
         model = torchvision.models.resnet18(weights='IMAGENET1K_V1')
         model.fc = torch.nn.Linear(512, 10)
-        for n,p in model.named_parameters():
-            if n!="fc.weight" and n!="fc.bias":
-                p.requires_grad=False
-    elif model_name=='vit':
+        for n, p in model.named_parameters():
+            if n != "fc.weight" and n != "fc.bias":
+                p.requires_grad = False
+    elif model_name == 'vit':
         model = torchvision.models.vit_b_16(weights='IMAGENET1K_V1')
-        for n,p in model.named_parameters():
-            if n!="heads.head.weight" and n!="heads.head.bias":
-                p.requires_grad=False
-            else:  
-                print(n)
+        for n, p in model.named_parameters():
+            if n != "heads.head.weight" and n != "heads.head.bias":
+                p.requires_grad = False
     return model
 
+
+def get_clip_model():
+    model, preprocess = clip.load("ViT-L/14")
+    # Unfreeze the final layer norm and the linear projection head
+    for name, param in model.named_parameters():
+        if 'ln_post' in name or 'ln_final' in name:
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
+
+    return ClipWrapper(model), preprocess
