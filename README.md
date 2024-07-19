@@ -1,5 +1,5 @@
 ## ⚠️ Preliminary / Work in Progress. ⚠️
-### ⚠️ Code works, but Normalization currently an issue (adversarial image has "burnt in" look) ⚠️
+⚠️ Code works, but Normalization currently an issue (adversarial image has "burnt in" look) ⚠️
 
 ---
 ### This fork lets you use CLIP's vision transformer to generate FFT adversarial images ❓🤖‍💫
