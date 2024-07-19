@@ -1,0 +1,17 @@
+cd CLIP-ImplicitBiasAdversarial
+git clone https://github.com/akamaster/pytorch_resnet_cifar10.git
+
+
+- Download this:
+https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-320.tgz
+
+- And use e.g. 7-zip to unzip it (twice, it's double-packed):
+
+https://www.7-zip.org/download.html
+
+- You should have:
+
+CLIP-ImplicitBiasAdversarial\data\imagenette2-320
+---> train
+---> val
+noisy_imagenette.csv
