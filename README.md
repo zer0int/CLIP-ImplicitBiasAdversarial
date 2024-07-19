@@ -1,3 +1,30 @@
+## ⚠️ Preliminary / Work in Progress. ⚠️
+### ⚠️ Code works, but Normalization currently an issue (adversarial image has "burnt in" look) ⚠️
+
+---
+### This fork lets you use CLIP's vision transformer to generate FFT adversarial images ❓🤖‍💫
+
+- `python train.py --model clipvit`
+
+In `utils/models.py` (at the very end), you can select the CLIP model: 
+
+`model, preprocess = clip.load("ViT-L/14")`
+
+Change that to e.g. `"ViT-B/32"` to use the smallest CLIP model if you want a quick(er) look.
+
+- `python mask_train.py --model clipvit --attack FMN --mask adversarial`
+- `python mask_train.py --model clipvit --attack FMN --mask essential`
+
+`--attack: Use FMN, PGD, DF`
+
+Fast Minimum Norm - Projected Gradient Descent - DeepFool
+
+- `python correlation.py --model clipvit --attack FMN`
+
+---------
+👇 See the original readme.md for further details 👇
+---------
+
 # Relating Implicit Bias and Adversarial Attacks through Intrinsic Dimension
 
 Code for the paper, tested with `python>=3.8, <=3.10`.
