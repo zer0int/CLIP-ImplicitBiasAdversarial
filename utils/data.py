@@ -1,3 +1,4 @@
+# utils/data.py
 import os
 import torchvision
 import torch
@@ -6,7 +7,18 @@ from torch.utils.data import DataLoader, Dataset
 import numpy as np
 import foolbox as fb
 from tqdm import trange, tqdm
+from PIL import Image
+from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
 
+try:
+    from torchvision.transforms import InterpolationMode
+    BICUBIC = InterpolationMode.BICUBIC
+except ImportError:
+    BICUBIC = Image.BICUBIC
+
+def convert_image_to_rgb(image):
+    return image.convert("RGB")
+    
 def get_dataloaders(dataset, train_batch_size, test_batch_size, shuffle_train=False, shuffle_test=False, unnorm=False):
 
     '''
@@ -42,7 +54,7 @@ def get_dataloaders(dataset, train_batch_size, test_batch_size, shuffle_train=Fa
                    'test': DataLoader(datasets['test'], batch_size=test_batch_size, shuffle=shuffle_test)}
     elif dataset=='imagenette':
         data_transforms = transforms.Compose([
-                transforms.Resize((224, 224)),
+                transforms.CenterCrop(size=(224, 224)),
                 transforms.ToTensor(),
                 ])
         datasets = {'train': torchvision.datasets.ImageFolder('./data/imagenette2-320/train', data_transforms),
@@ -139,7 +151,6 @@ class AdversarialDataset(Dataset):
     def __getitem__(self, idx):
         clean, adv, labels, adv_labels = self.clean_imgs[idx], self.adv_imgs[idx], self.labels[idx], self.adv_labels[idx]
         return clean, adv, labels, adv_labels
-
 
 class MaskDataset(Dataset):
 

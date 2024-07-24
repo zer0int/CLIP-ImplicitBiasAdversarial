@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 from utils.intrinsic_dimension import id_correlation
 import torch
-from anatome.similarity import svcca_distance
+from anatome.distance import svcca_distance
 
 
 def cosine_sim(dataset1, dataset2):

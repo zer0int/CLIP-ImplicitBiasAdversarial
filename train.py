@@ -1,3 +1,4 @@
+# train.py
 import torch
 import argparse
 from utils.data import get_dataloaders
@@ -6,6 +7,28 @@ from utils.models import get_model, get_clip_model
 import os
 from PIL import Image
 import torchvision.transforms as transforms
+from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
+
+import warnings
+warnings.filterwarnings('ignore')
+
+try:
+    from torchvision.transforms import InterpolationMode
+    BICUBIC = InterpolationMode.BICUBIC
+except ImportError:
+    BICUBIC = Image.BICUBIC
+
+def convert_image_to_rgb(image):
+    return image.convert("RGB")
+
+transforming = Compose([
+    Resize(size=224, interpolation=BICUBIC, max_size=None, antialias=True),
+    Resize(size=(224, 224)),
+    CenterCrop(size=(224, 224)),
+    convert_image_to_rgb,
+    ToTensor(),
+    Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+])
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default="resnet20", help="model architecture")
@@ -79,7 +102,7 @@ if model_name == 'clipvit':
     for phase in ['train', 'test']:
         processed_data = []
         for images, labels in dataloaders[phase]:
-            images = [preprocess(tensor_to_pil(image)).unsqueeze(0) for image in images]
+            images = [transforming(transforms.ToPILImage()(image)).unsqueeze(0) for image in images]
             images = torch.cat(images).to(device)
             processed_data.append((images, labels.to(device)))
         dataloaders[phase] = CustomDataLoader(processed_data)

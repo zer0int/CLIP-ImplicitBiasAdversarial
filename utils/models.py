@@ -1,8 +1,8 @@
+# utils/models.py
 import torch.nn as nn
 import torch
 import torchvision
 from pytorch_resnet_cifar10.resnet import resnet20 as resnet20
-#from ct.src.cct import cct_7_3x1_32
 import clip
 
 class ClipWrapper(nn.Module):
@@ -82,7 +82,7 @@ def get_model(model_name):
 
 
 def get_clip_model():
-    model, preprocess = clip.load("ViT-L/14")
+    model, preprocess = clip.load("ViT-B/32")
     # Unfreeze the final layer norm and the linear projection head
     for name, param in model.named_parameters():
         if 'ln_post' in name or 'ln_final' in name:

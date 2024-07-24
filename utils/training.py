@@ -1,8 +1,24 @@
+# utils/training.py
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from utils.models import MaskedClf, Mask
 import os
+ 
+import warnings
+warnings.filterwarnings('ignore')
+ 
+def unnormalize(tensor, mean, std):
+    mean = torch.tensor(mean).view(-1, 1, 1)
+    std = torch.tensor(std).view(-1, 1, 1)
+    return tensor * std + mean
+
+
+def verify_tensor(tensor, name):
+    print(f"{name} min: {tensor.min()}, max: {tensor.max()}, mean: {tensor.mean()}")
+    if tensor.min() < 0 or tensor.max() > 255:
+        print(f"Warning: {name} tensor has values out of expected range 0-255")
+
 
 def train(model, dataloaders, n_epochs, optimizer, scheduler=None):
 
@@ -40,7 +56,6 @@ def train(model, dataloaders, n_epochs, optimizer, scheduler=None):
                     correct+=(torch.argmax(out, axis=1)==y.to(device)).sum().item()
             print("Accuracy on "+i+" set: ", correct/len(dataloaders[i].dataset))
 
-
 def ess_train(base_model, clean, y, lam, idx, path, img_size, figures=False):
 
     '''
@@ -58,84 +73,90 @@ def ess_train(base_model, clean, y, lam, idx, path, img_size, figures=False):
     Return: index of next image to be processed
     '''
 
-    loss=torch.nn.CrossEntropyLoss()
-    device=torch.device("cuda" if next(base_model.parameters()).is_cuda else "cpu")
-    n=len(y)
-    y=y.to(device)
-    clean=clean.to(device)
-    base_out=base_model(clean)
-    losses=[[] for i in range(n)]
-    #we consider only correctly classified images
-    werecorrect=(np.where((torch.argmax(base_out, axis=1)==y).cpu())[0])
+    loss = torch.nn.CrossEntropyLoss()
+    device = torch.device("cuda" if next(base_model.parameters()).is_cuda else "cpu")
+    n = len(y)
+    y = y.to(device)
+    clean = clean.to(device)
+    base_out = base_model(clean)
+    losses = [[] for i in range(n)]
+    werecorrect = (np.where((torch.argmax(base_out, axis=1) == y).cpu())[0])
+    
+    # Normalization parameters used during preprocessing
+    mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device)
+    std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device)
+    
     for i in range(n):
-        if not os.path.isfile(path+"masks/"+str(y[i].item())+"/"+str(idx)+".npy"):
-
+        if not os.path.isfile(path + "masks/" + str(y[i].item()) + "/" + str(idx) + ".npy"):
             if i not in werecorrect:
-                idx+=1
+                idx += 1
             else:  
-                model=MaskedClf(Mask((3, img_size, img_size)).to(device), base_model)
+                model = MaskedClf(Mask((3, img_size, img_size)).to(device), base_model)
                 for p in model.clf.parameters():
-                    p.requires_grad=False
+                    p.requires_grad = False
                 model.mask.train()
-                optimizer=torch.optim.Adam(model.mask.parameters(), lr=0.01)
-                epoch=0
+                optimizer = torch.optim.Adam(model.mask.parameters(), lr=0.01)
+                epoch = 0
                 while True:
-                    out=model(clean[i])
-                    l=loss(out, y[i].reshape(1))
-                    penalty=model.mask.M.abs().sum()
-                    l+=penalty*lam
+                    out = model(clean[i])
+                    l = loss(out, y[i].reshape(1))
+                    penalty = model.mask.M.abs().sum()
+                    l += penalty * lam
                     losses[i].append(l.item())
                     optimizer.zero_grad()
                     l.backward()
                     optimizer.step()
-                    #mask entries are in [0,1]
-                    model.mask.M.data.clamp_(0.,1.)
-                    epoch+=1
-                    #train until convergence, for no less than 500 epochs and no more than 5000 epochs
-                    if (epoch>500 and abs(l.item()-np.mean(losses[i][-20:]))<1e-5) or epoch>5000:
-                        correct=torch.argmax(out, axis=1)==y[i]
+                    # mask entries are in [0,1]
+                    model.mask.M.data.clamp_(0., 1.)
+                    epoch += 1
+                    # train until convergence, for no less than 500 epochs and no more than 5000 epochs
+                    if (epoch > 500 and abs(l.item() - np.mean(losses[i][-20:])) < 1e-5) or epoch > 5000:
+                        correct = torch.argmax(out, axis=1) == y[i]
                         if correct:
-                            mask=torch.fft.fftshift(model.mask.M.detach().cpu())
-                            mask=mask.squeeze().numpy()
+                            mask = torch.fft.fftshift(model.mask.M.detach().cpu())
+                            mask = mask.squeeze().numpy()
                             if figures:
                                 plt.axis('off')
-                                plt.figure(figsize=(30,20))
+                                plt.figure(figsize=(30, 20))
                                 plt.plot(losses[i])
-                                plt.savefig(path+"figures/"+str(y[i].item())+"/"+str(idx)+"loss.png")
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + "loss.png")
                                 plt.close()
                                 plt.figure()
-                                plt.imshow(np.transpose(mask, (1,2,0)))
+                                plt.imshow(np.transpose(mask, (1, 2, 0)))
                                 plt.xticks([], [])
                                 plt.yticks([], [])
-                                plt.savefig(path+"figures/"+str(y[i].item())+"/"+str(idx)+".png", dpi=200, bbox_inches='tight', format='png')
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + ".png", dpi=200, bbox_inches=None, format='png')
                                 plt.close()
+
                                 img=clean[i].reshape(3,img_size,img_size).detach().cpu().permute(1,2,0).numpy()
                                 img_recon=model.mask(clean[i]).reshape(3,img_size,img_size).detach().cpu().permute(1,2,0).numpy()
+
                                 plt.figure()           
-                                plt.imshow(img)
+                                plt.imshow(img)                               
                                 plt.xticks([], [])
                                 plt.yticks([], [])
-                                plt.savefig(path+"figures/"+str(y[i].item())+"/"+str(idx)+"clean.png", dpi=200, bbox_inches='tight', format='png')
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + "clean.png", dpi=200, bbox_inches='tight', pad_inches=0, format='png')
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + "clean_orgsize.png", dpi='figure', bbox_inches='tight', pad_inches=0, format='png')
                                 plt.close()
                                 plt.figure()
-                                plt.imshow(np.log(torch.fft.fftshift(torch.fft.fft2(clean[i])).abs().reshape(3,img_size,img_size)[0].detach().cpu().numpy()/img_size/img_size), cmap='Blues')
+                                plt.imshow(np.log(torch.fft.fftshift(torch.fft.fft2(clean[i])).abs().reshape(3, img_size, img_size)[0].detach().cpu().numpy() / img_size / img_size), cmap='Blues')
                                 plt.xticks([], [])
                                 plt.yticks([], [])
-                                plt.savefig(path+"figures/"+str(y[i].item())+"/"+str(idx)+"f_clean.png", dpi=200, bbox_inches='tight', format='png')
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + "f_clean.png", dpi=200, bbox_inches=None, format='png')
                                 plt.close()
                                 plt.figure()
                                 plt.imshow(img_recon)
                                 plt.xticks([], [])
                                 plt.yticks([], [])
-                                plt.savefig(path+"figures/"+str(y[i].item())+"/"+str(idx)+"clean_recon.png", dpi=200, bbox_inches='tight', format='png')
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + "clean_recon.png", dpi=200, bbox_inches=None, format='png')
                                 plt.close()
                             
-                            np.save(path+"masks/"+str(y[i].item())+"/"+str(idx)+".npy", mask)
+                            np.save(path + "masks/" + str(y[i].item()) + "/" + str(idx) + ".npy", mask)
                             del mask
-                        idx+=1
+                        idx += 1
                         break
         else:
-            idx+=1
+            idx += 1
     return idx
 
 def adv_train(base_model, clean, adv, y, lam, idx, path, img_size, figures=False):
@@ -156,84 +177,93 @@ def adv_train(base_model, clean, adv, y, lam, idx, path, img_size, figures=False
     Return: index of next image to be processed
     '''
 
-    loss=torch.nn.CrossEntropyLoss()
-    device=torch.device("cuda" if next(base_model.parameters()).is_cuda else "cpu")
-    n=len(clean)
-    adv=adv.to(device)
-    y=y.to(device)
-    clean=clean.to(device)
-    base_out=base_model(clean)
-    base_adv=base_model(adv)
-    losses=[[] for i in range(n)]
-    wrong_labels=torch.argmax(base_adv, axis=1)
-    #we consider only correctly classified and successfully attacked images
-    wereadv=(np.where(torch.logical_and((torch.argmax(base_out, axis=1)==y).cpu(), (torch.argmax(base_adv, axis=1)!=y).cpu()))[0])
+    loss = torch.nn.CrossEntropyLoss()
+    device = torch.device("cuda" if next(base_model.parameters()).is_cuda else "cpu")
+    n = len(clean)
+    adv = adv.to(device)
+    y = y.to(device)
+    clean = clean.to(device)
+    base_out = base_model(clean)
+    base_adv = base_model(adv)
+    losses = [[] for i in range(n)]
+    wrong_labels = torch.argmax(base_adv, axis=1)
+    # we consider only correctly classified and successfully attacked images
+    wereadv = (np.where(torch.logical_and((torch.argmax(base_out, axis=1) == y).cpu(), (torch.argmax(base_adv, axis=1) != y).cpu()))[0])
+    
+    # Normalization parameters used during preprocessing
+    mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device)
+    std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device)
+    
+    
     for i in range(n):
-        if not os.path.isfile(path+"masks/"+str(y[i].item())+"/"+str(idx)+".npy"):
+        if not os.path.isfile(path + "masks/" + str(y[i].item()) + "/" + str(idx) + ".npy"):
             if i not in wereadv:
-                idx+=1
+                idx += 1
             else:    
-                model=MaskedClf(Mask((3, img_size, img_size)).to(device), base_model)
+                model = MaskedClf(Mask((3, img_size, img_size)).to(device), base_model)
                 for p in model.clf.parameters():
-                    p.requires_grad=False
+                    p.requires_grad = False
                 model.mask.train()
-                optimizer=torch.optim.Adam(model.mask.parameters(), lr=0.01)
-                epoch=0
+                optimizer = torch.optim.Adam(model.mask.parameters(), lr=0.01)
+                epoch = 0
                 while True:
-                    out=model(adv[i])
-                    l=loss(out, wrong_labels[i].reshape(1))
-                    penalty=model.mask.M.abs().sum()
-                    l+=penalty*lam
+                    out = model(adv[i])
+                    l = loss(out, wrong_labels[i].reshape(1))
+                    penalty = model.mask.M.abs().sum()
+                    l += penalty * lam
                     losses[i].append(l.item())
                     optimizer.zero_grad()
                     l.backward()
                     optimizer.step()
-                    #mask entries are in [0,1]
+                    # mask entries are in [0,1]
                     model.mask.M.data.clamp_(0., 1.)
-                    epoch+=1
-                    #train until convergence, for no less than 500 epochs and no more than 5000 epochs
-                    if(epoch>500 and abs(l.item()-np.mean(losses[i][-20:]))<1e-5) or epoch>5000:
+                    epoch += 1
+                    # train until convergence, for no less than 500 epochs and no more than 5000 epochs
+                    if (epoch > 500 and abs(l.item() - np.mean(losses[i][-20:])) < 1e-5) or epoch > 5000:
                         model.eval()
-                        correct = torch.argmax(out, axis=1)==wrong_labels[i]
+                        correct = torch.argmax(out, axis=1) == wrong_labels[i]
                         if correct:
-                            mask=torch.fft.fftshift(model.mask.M.detach().cpu())
-                            mask=mask.squeeze().numpy()
+                            mask = torch.fft.fftshift(model.mask.M.detach().cpu())
+                            mask = mask.squeeze().numpy()
                             if figures:
-                                plt.figure(figsize=(30,20))
+                                plt.figure(figsize=(30, 20))
                                 plt.plot(losses[i])
-                                plt.savefig(path+"figures/"+str(y[i].item())+"/"+str(idx)+"loss.png")
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + "loss.png")
                                 plt.close()
                                 plt.figure()
-                                plt.imshow(np.transpose(mask, (1,2,0)))
+                                plt.imshow(np.transpose(mask, (1, 2, 0)))
                                 plt.xticks([], [])
                                 plt.yticks([], [])
-                                plt.savefig(path+"figures/"+str(y[i].item())+"/"+str(idx)+"_"+str(wrong_labels[i].item())+".png", dpi=200, bbox_inches='tight', format='png')
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + "_" + str(wrong_labels[i].item()) + ".png", dpi=200, bbox_inches=None, format='png')
                                 plt.close()
+
                                 adv_img=adv[i].reshape(3,img_size,img_size).detach().cpu().permute(1,2,0).numpy()
-                                recon=model.mask(adv[i]).reshape(3,img_size,img_size).detach().cpu().permute(1,2,0).numpy()
+                                recon=model.mask(adv[i]).reshape(3,img_size,img_size).detach().cpu().permute(1,2,0).numpy()                              
+                               
                                 plt.figure()
                                 plt.imshow(adv_img)
                                 plt.xticks([], [])
                                 plt.yticks([], [])
-                                plt.savefig(path+"figures/"+str(y[i].item())+"/"+str(idx)+"adv.png", dpi=200, bbox_inches='tight', format='png')
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + "adv.png", dpi=200, bbox_inches='tight', pad_inches=0, format='png')
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + "adv_orgsize.png", dpi='figure', bbox_inches='tight', pad_inches=0, format='png')
                                 plt.close()
                                 plt.figure()
-                                plt.imshow(np.log(torch.fft.fftshift(torch.fft.fft2(adv[i])).abs().reshape(3,img_size,img_size)[0].detach().cpu().numpy()/img_size/img_size), cmap='Blues')
+                                plt.imshow(np.log(torch.fft.fftshift(torch.fft.fft2(adv[i])).abs().reshape(3, img_size, img_size)[0].detach().cpu().numpy() / img_size / img_size), cmap='Blues')
                                 plt.xticks([], [])
                                 plt.yticks([], [])
-                                plt.savefig(path+"figures/"+str(y[i].item())+"/"+str(idx)+"f_adv.png", dpi=200, bbox_inches='tight', format='png')
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + "f_adv.png", dpi=200, bbox_inches=None, format='png')
                                 plt.close()                 
                                 plt.figure()
                                 plt.imshow(recon)
                                 plt.xticks([], [])
                                 plt.yticks([], [])
-                                plt.savefig(path+"figures/"+str(y[i].item())+"/"+str(idx)+"pert_recon.png", dpi=200, bbox_inches='tight', format='png')   
+                                plt.savefig(path + "figures/" + str(y[i].item()) + "/" + str(idx) + "pert_recon.png", dpi=200, bbox_inches=None, format='png')   
                                 plt.close()                  
-                            np.save(path+"masks/"+str(y[i].item())+"/"+str(idx)+".npy", mask)
+                            np.save(path + "masks/" + str(y[i].item()) + "/" + str(idx) + ".npy", mask)
                             del mask
                             
-                        idx+=1
+                        idx += 1
                         break
         else:
-            idx+=1
+            idx += 1
     return idx
